@@ -1,0 +1,199 @@
+colnames(customer_r) <- tolower(colnames(customer_r))
+colnames(reservation_r) <- tolower(colnames(reservation_r))
+colnames(order_info_r) <- tolower(colnames(order_info_r))
+colnames(item_r) <- tolower(colnames(item_r))
+
+head(customer_r)
+
+
+library(dplyr)
+library(ggplot2)
+
+table(reservation_r$BRANCH)   #
+
+no_cancel_data <- reservation_r %>% filter(CANCEL == "N")     #주문이 취소되지 않은경우에만 선택
+table(no_cancel_data$BRANCH)      #주문이 취소되지 않은 예약 건수의 부서별 빈도표
+
+df_f_join_1 <- inner_join(reservation_r, order_info_r, by = "reserv_no")#이너조인으로 reservation과 orderinfo를 reserv_no로 결합
+df_f_join_2 <- inner_join(df_f_join_1, item_r, by = "item_id") #join_1과 item을 item_id로 연결
+head(df_f_join_2)
+
+df_branch_sales <- df_f_join_2 %>%                                #branch_sales에 join2를 대입
+  filter(branch == "강남" | branch == "마포" | branch == "서초") %>%          #강남, 마포, 서초 출력
+  group_by(branch, product_name) %>%                       #부서이름과 메뉴이름으로 그룹
+  summarise(sales_amt = sum(sales) / 1000)                  #매출합산
+
+ggplot(df_branch_sales, aes(x = "", y = sales_amt, fill = product_name)) +     #누적막대그래프 출력
+  facet_grid(facets = . ~ branch) +                                   #면 분할 함수 branch기준으로 분할
+  geom_bar(stat = "identity")                                         #
+
+ggplot(df_branch_sales, aes(x = "", y = sales_amt, fill=product_name)) +  #그래프 그리는데 제품이름으로 채운다
+  facet_grid(facets = . ~ branch) +   #
+  geom_bar(stat = "identity") +
+  coord_polar("y", start = 0)                 #파이차트로 그리기
+
+df_f_join_1 <- inner_join(reservation_r, order_info_r, by ="reserv_no")     #reservation과 orderinfo를 reservno로 결합
+df_f_join_2 <- inner_join(df_f_join_1, item_r, by = "item_id")            #join1에 item 을 item_id로 결합
+df_branch_items <- df_f_join_2 %>% filter(branch == "강남" | branch == "마포" | branch == "서초") #강남 마포 서초 출력
+
+table(df_branch_items$branch, df_branch_items$product_name)          #교차 빈도표 생성
+
+df_branch_items_table <- as.data.frame(table(df_branch_items$branch, df_branch_items$product_name)) # 데이터 프레임 형태로 구조변환
+
+df_branch_items_percent <- df_branch_items_table %>%          # 데이터분석을 위하여 가공
+  group_by(df_branch_items_table$Var1) %>%                    #열이름 ( branch 는 Var1로)
+  mutate(percent_items = Freq/sum(Freq) * 100)                #빈도는 Freq로 열이름생성
+
+head(df_branch_items_percent)
+
+gg <- ggplot(df_branch_items_percent, aes(x = Var1, y = percent_items, group = Var1, fill = Var2)) +   #gg변수에 담기
+  geom_bar(stat = "identity")                          #누적막대그래프
+
+gg <- gg +
+  labs(title = "지점별 주문 거수 그래프", x = "지점", y = "메뉴아이템판매비율", fill = "메뉴아이템")  
+              #타이틀은 지점별 주문건수그래프, x좌표는 지점, y좌표는 메뉴아이템
+gg
+
+df_rfm_join_1 <- inner_join(reservation_r, order_info_r, by = "reserv_no") # reserv_no로 키로 예약,주문연결
+head(df_rfm_join_1)
+
+df_rfm_data <- df_rfm_join_1 %>%              #대입
+  group_by(customer_id) %>%                       #고객아이디로 묶기
+  summarise(visit_sum = n_distinct(reserv_no), sales_sum = sum(sales) / 1000) %>%      #전부합의 1000으로나누기
+  arrange(customer_id)
+
+df_rfm_data
+
+summary(df_rfm_data)     #요약 통계값 확인
+
+ggplot(df_rfm_data, aes(x = "", y = visit_sum))+                      #y축은 방문자 합계
+  geom_boxplot(width = 0.8, outlier.size = 2, outlier.color = "red") +        #
+  labs(title = "방문횟수상자그림", x = "빈도", y = "방문횟수")                   #이름
+
+ggplot(df_rfm_data, aes(x = "", y = sales_sum))+                       #위와 같은데 매출버전
+  geom_boxplot(width = 0.8, outlier.size = 2, outlier.color = "red")+
+  labs(title = "매출 상자그림", x = "매출", y = "금액")
+
+total_sum_data <- df_rfm_data %>%
+  summarise(t_visit_sum = sum(visit_sum), t_sales_sum(sales_sum))
+loyalty_sum_data <- df_rfm_data %>%
+  summarise(l_visit_sum = sum(ifelse(visit_sum > 2, visit_sum, 0)), l_sales_sum = sum(ifelse(sales_sum > 135, sales_sum, 0)))
+loyalty_sum_data / total_sum_data
+
+quantile(df_rfm_data$visit_sum, probs =c(0.6, 0.9)) #방문횟수 60%와 90%에 해당하는 분위수 찾기
+
+total_sum_data <- df_rfm_data %>%                        
+  summarise(t_visit_sum = sum(visit_sum), t_sales_sum = sum(sales_sum))    #총 방문횟수와 총 매출 합
+                             #우수등급 이상 기준인 방문 2초과이면 방문 횟수 합
+loyalty_sum_data <- df_rfm_data %>%
+  summarise(l_visit_sum = sum(ifelse(visit_sum > 2, visit_sum, 0)), l_sales_sum = sum(ifelse(sales_sum > 135, sales_sum, 0)))
+loyalty_sum_data / total_sum_data                            
+
+df_f_join_1 <- inner_join(reservation_r, order_info_r, by = "reserv_no")#테이블연결
+df_f_join_2 <- inner_join(df_f_join_1, item_r, by = "item_id")#메뉴정보테이블연결
+target_item <- c("M0005", "M0009")           #스테이크와 와인
+
+df_stime_order <- df_f_join_2 %>%           #대입
+  filter((item_id %in% target_item)) %>%    #스테이크나 와인을 주문한 경우
+  group_by(reserv_no) %>%                  #예약번호로 그룹화
+  mutate(order_cnt = n()) %>%              #그룹화된 행 세기
+  distinct(branch, reserv_no, order_cnt) %>%       #중복예약번호는 하나만
+  filter(order_cnt == 2) %>%            #2인의경우 선택(스테이크와 와인 동시에)
+  arrange(branch)
+
+df_stime_order
+
+stime_order_rsv_no <- df_stime_order$reserv_no
+
+df_stime_sales <- df_f_join_2 %>%
+  filter((reserv_no %in% stime_order_rsv_no) & (item_id %in% target_item)) %>%
+  group_by(reserv_no, product_name) %>%                         #예약번호와 메뉴아이템으로 그룹
+  summarise(sales_amt = sum(sales) / 1000) %>%                  #매출 합계 요약 계산
+  arrange(product_name, reserv_no)                              #메뉴아이템 예약번호 기준으로 정렬
+df_stime_sales
+
+
+steak <- df_stime_sales %>% filter(product_name == "STEAK")   #스테이크정보만
+wine <- df_stime_sales %>% filter(product_name == "WINE")         #와인정보만
+
+plot(steak$sales_amt, wine$sales_amt)      #매출상관도 그리기
+
+cor.test(steak$sales_amt, wine$sales_amt)
+
+df_rsv_customer <- reservation_r %>%
+  select(customer_id, reserv_no) %>%         #고객별 모든 예약번호 선택
+  arrange(customer_id, reserv_no)
+head(df_rsv_customer)
+
+df_steak_order_rsv_no <- order_info_r %>%      
+  filter(item_id == "M0005") %>%              #스테이크 추문이면
+  mutate(steak_order = "Y") %>%                #steak_order열을 데이터를 Y로
+  arrange(reserv_no)
+
+head(df_steak_order_rsv_no)
+
+df_steak_order_1 <- left_join(df_rsv_customer, df_steak_order_rsv_no, by = "reserv_no") %>%  #모든 예약번호에대해 스테이크 주문한 예약번호를 레프트 조인
+  group_by(customer_id) %>%
+  mutate(steak_order = ifelse(is.na(steak_order), "N", "Y")) %>%   #고객번호로 그룹화하여 (182)명
+  summarise(steak_order = max(steak_order)) %>%     #최댓값만 취함
+  arrange(customer_id)
+
+df_dpd_var <- df_steak_order_1     #최종정리된 고객별 스테이크 주문 여부
+
+df_dpd_var      #종족변수, 최종 고객 182명의 스테이크 여부 결과 확인
+
+
+df_customer <- customer_r %>% filter(!is.na(sex_code))          #성별이없으면 고객번호 제거
+
+df_table_join_1 <- inner_join(df_customer, reservation_r, by = "customer_id")  #고객 테이블과 예약 테이블 customer_id키로 이너조인
+df_table_join_2 <- inner_join(df_table_join_1, order_info_r, by = "reserv_no")    #reserv_no 로 이너조인
+str(df_table_join_2)
+
+
+df_table_join_3 <- df_table_join_2 %>%
+  group_by(customer_id, sex_code, reserv_no, visitor_cnt) %>% #분석에 필요한 열만 그룹해서 정리
+  summarise(sales_sum = sum(sales)) %>%
+  group_by(customer_id, sex_code) %>%
+  summarise(visitor_sum = n_distinct(reserv_no), visitor_sum = sum(visitor_cnt),
+                          #중복이 아닌 값을 카운팅(방문횟수)
+            sales_sum = sum(sales_sum) / 1000) %>%
+  arrange(customer_id)
+df_idp_var <- df_table_join_3
+df_idp_var
+
+
+df_final_data <- inner_join(df_idp_var, df_dbd_var, by = "customer_id")      #이너조인
+df_final_data$sex_code <- as.factor(df_final_data$sex_code)   #의사결정 나무함수를 사용하려고 열 구조를 팩터형으로 바꿈
+df_final_data$steak_order <- as.factor(df_final_data$steak_order)
+
+df_final_data <- df_final_data[, c(2:6)]      #의사 결정 나무에 필요한 열만 선택
+df_final_data                          #최종 분석용 데이터셋 확인
+
+install.packages("rpart")
+library(rpart)
+install.packages("caret")
+library(caret)
+install.packages("e1071")
+library(e1071)
+
+set.seed(10000)
+
+train_data <- createDataPartition(y = df_final_data$steak_order, p = 0.8,     #오류발생...?
+              #데이터 나누기 함수 steak_order열 기준으로 80%행 나누기                   
+              list = FALSE)
+train <- df_final_data[train_data, ]
+test <- df_final_data[-train_data, ]
+              #훈련 데이터 셋을 제외한 데이터
+
+decision_tree <- rpart(stear_order~., data = train)
+decision_tree
+
+
+predicted <- predict(decision_tree, test, type = 'class')
+confusionMatrix(predicted, test$steak_order)
+
+plot(decision_tree, margin = 0.1)
+text(decision_tree)
+
+install.packages("rattle")
+library(rattle)
